@@ -1,0 +1,3 @@
+﻿  visionChecksum.cpp
+d:\a@projcharles\visionmcu_checksum\visionchecksum\visionchecksum.cpp(68): warning C4101: 'flen': unreferenced local variable
+  visionChecksum.vcxproj -> D:\A@projCharles\visionMCU_Checksum\visionChecksum\Debug\visionChecksum.exe
