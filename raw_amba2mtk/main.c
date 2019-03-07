@@ -29,7 +29,7 @@ static char *psz_prog, *psz_fnsrc, *psz_fndst;
 /*---------------------------------------------------------------------
  * _print_prog_usage
  */
-static void _print_prog_usage(unsigned char *psz_prog_name)
+static void _print_prog_usage(char *psz_prog_name)
 {
 	printf("\n");
 	printf("Usage:\n");
@@ -45,8 +45,7 @@ static void _print_prog_usage(unsigned char *psz_prog_name)
  */
 int main(int argc, char *argv[])
 {
-	size_t szlen;
-	unsigned err;
+	char *psrcbuf, *pbufsave;
 
 	psz_prog = argv[0];
 	if (argc<3) {
@@ -64,22 +63,12 @@ int main(int argc, char *argv[])
 	}
 
 	/*-- open/create target file */
-	#if 0
-	szlen = strlen(psz_fnsrc)+1;
-	if (szlen>SZ_FNAME_LEN_MAX-9) {
-		printf("error: insufficient memory!\n");
-		goto _exit;
-	}
-	strncpy(sz_fndst, psz_fnsrc, szlen);
-	strncat(sz_fndst, ".swp",4);
-
-	printf("creating target file : %s\n", sz_fndst);
-	#endif
 	psz_fndst = argv[2];
 	fd_dst = fopen(psz_fndst, "wb");
 	if (!fd_dst) {
 		printf("FATAL: error creating destination [%s] !\n", psz_fndst);
-		goto _exit;
+		if (fd_src) fclose(fd_src);
+		exit(1);
 	}
 
 	/*-- alloc & read SRC image */
@@ -87,8 +76,7 @@ int main(int argc, char *argv[])
 	fseek(fd_src, 0, SEEK_END);
 	fsize = ftell(fd_src);
 
-	unsigned char *psrcbuf;
-	psrcbuf = (unsigned char *)malloc(fsize);
+	pbufsave = psrcbuf = (char *)malloc(fsize);
 	//printf("SRC[%s] size : %d\n", psz_fnsrc, fsize);
 
 	if (!psrcbuf) {
@@ -103,22 +91,20 @@ int main(int argc, char *argv[])
 	}
 
 	printf("Converting ...\n");
-	unsigned char ch0, ch1, *pdstbuf, *pwritebuf, u8tmp;
+	char ch0, ch1, *pdstbuf;//, u8tmp;
 	size_t wsize;
 	unsigned int utmp;
 
-	//printf("psrcbuf= 0x%x \n", psrcbuf);
-	pwritebuf = pdstbuf = psrcbuf;
+	pdstbuf = psrcbuf;
 	wsize = fsize / 2;
 	do {
 		ch0 = *psrcbuf++;
 		ch1 = *psrcbuf++;
-		//printf("ch0= %02x, ch1= %02x \n", *pch0, *pch1);
+		//printf("ch0= %02x, ch1= %02x \n", ch0, ch1);
 		utmp = ch1; utmp <<= 8; utmp += ch0;
-		*pdstbuf++ = (unsigned char)((utmp >> 6) & 0xFF);
+		*pdstbuf++ = (char)((utmp >> 6) & 0xFF);
 
 		//printf("utmp= 0x%04x, u8tmp= 0x%x\n", utmp, u8tmp);
-		//fwrite(&u8tmp, sizeof(char), 1, fd_dst);
 		fsize -= 2;
 		//printf("--> %d ", fsize);
 	} while(fsize > 0);
@@ -128,14 +114,14 @@ int main(int argc, char *argv[])
 		goto _exit;
 	}
 
-	fwrite(pwritebuf, sizeof(char), wsize, fd_dst);
+	fwrite(pbufsave, sizeof(char), wsize, fd_dst);
 
 
 	/*-- exiting program */
 _exit:
 	if (fd_src) fclose(fd_src);
 	if (fd_dst) fclose(fd_dst);
-	if (psrcbuf) free(psrcbuf);
+	if (pbufsave) free(pbufsave);
 
     exit(0);
 }
