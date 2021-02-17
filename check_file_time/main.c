@@ -16,9 +16,8 @@
 /*------------------------------------------------------------------
  * Global Variables
  */
-FILE *fd_bmp, *fd_raw;
-static char *psz_prog, *psz_fnbmp, sz_fnraw[SZ_FNAME_LEN_MAX];
-
+static char *psz_prog;
+static int _dbg, _show_time;
 
 /*---------------------------------------------------------------------
  * External reference
@@ -37,11 +36,11 @@ static void _show_usage(char *psz_prog_name)
 {
 	printf("\n");
 	printf("Usage:\n");
-	printf("\t%s root_path\n",  psz_prog_name);
+	printf("\t%s root_path [-d]\n",  psz_prog_name);
 	printf("DESCRIPTION:\n");
 	printf("\tTraverse the directory and check time of each file...\n");
-//	printf("OPTION:\n");
-//	printf(" -w     *width* : specify width of raw image\n");
+	printf("OPTION:\n");
+	printf(" -d     enable debug printf");
 //	printf(" -h     *height* : specify height of raw image\n");
 //	printf(" -bayer *pattern_id* : bayer pattern\n");
 //	printf("\t 1=R_GR_GB_B, 2=GR_R_B_GB, 3=B_GB_GR_R, 4=GB_B_R_GR\n");
@@ -52,6 +51,21 @@ static void _show_usage(char *psz_prog_name)
 }
 
 
+///!------------------------------------------------------
+///! @brief		DbgPrint
+///! @param
+///! @return
+///! @note
+///!------------------------------------------------------
+static void DbgPrint(const char *fmt, ...)
+{
+	if (_dbg > 0) {
+		va_list	args;
+		va_start(args, fmt);
+		printf(fmt, args); fflush(stdout);
+		va_end(args);
+	}
+}
 
 ///!------------------------------------------------------
 ///! @brief
@@ -59,15 +73,22 @@ static void _show_usage(char *psz_prog_name)
 ///! @return
 ///! @note
 ///!------------------------------------------------------
-int check_file_time(struct stat *p_sb)
+int check_file_time(struct stat *p_sb, time_t *p_min_tm)
 {
-	time_t atime, mtime, ctime;
+	time_t atime, mtime, ctime, min;
 	atime = p_sb->st_atime;
 	mtime = p_sb->st_mtime;
 	ctime = p_sb->st_ctime;
 
-	if ((mtime < ctime) || (atime < mtime))
+	min = (atime < mtime) ? atime : mtime;
+	min = (ctime < min) ? ctime : min;
+	*p_min_tm = min;
+
+	//if ((mtime < ctime) || (atime < mtime))
+	if (atime < mtime) {
+		// @Windows10, mtime=日期，atime=修改日期，ctime=建立日期(copy 會改改變這一個時間) ??
 		return -1;
+	}
 	else
 		return 0;
 }
@@ -88,7 +109,7 @@ int process_dir(char *psz_root)
 	if (!psz_root) {
 		return -1;
 	}
-	//printf("%s(): [%s]\n", __FUNCTION__, psz_root); fflush(stdout);
+	DbgPrint("%s(): [%s]\n", __FUNCTION__, psz_root); fflush(stdout);
 
 	//-- get DIR struct of root directory
 	if( !(pDir = opendir(psz_root)) ) {
@@ -108,10 +129,15 @@ int process_dir(char *psz_root)
 			continue;
 		}
 
-		//printf("Processing [%s/%s]\n", psz_root, ptr->d_name); fflush(stdout);
+		DbgPrint("Processing [%s/%s]\n", psz_root, ptr->d_name); fflush(stdout);
 		//-- get file info
-		struct stat sb;
-		if (stat(ptr->d_name, &sb) == -1) {
+		struct 	stat sb;
+		char	*p_test_fname;
+		int 	test_path_len;
+		test_path_len = strlen(psz_root)+strlen(ptr->d_name)+2;
+		p_test_fname = (char *)malloc(test_path_len);
+		snprintf(p_test_fname, test_path_len, "%s/%s", psz_root, ptr->d_name);
+		if (stat(p_test_fname, &sb) == -1) {
 			perror("stat");
 			errCode = EXIT_FAILURE;
 			continue;
@@ -120,8 +146,10 @@ int process_dir(char *psz_root)
 		switch(sb.st_mode & S_IFMT) {
 			char 	*p_new_root;
 			int		new_size;
+			time_t min_tm;
+
 			case S_IFDIR:
-				//printf("case: directory [%s/%s]\n", psz_root, ptr->d_name); fflush(stdout);
+				DbgPrint("case: directory [%s/%s]\n", psz_root, ptr->d_name); fflush(stdout);
 				new_size = strlen(psz_root)+1+strlen(ptr->d_name)+1;
 				p_new_root = (char *)malloc(new_size);
 				snprintf(p_new_root, new_size, "%s/%s", psz_root, ptr->d_name);
@@ -129,16 +157,23 @@ int process_dir(char *psz_root)
 				free(p_new_root);
 				break;
 			case S_IFREG:
-				//printf("case: regular file [%s/%s]\n", psz_root, ptr->d_name); fflush(stdout);
+				DbgPrint("case: regular file [%s/%s]\n", psz_root, ptr->d_name); fflush(stdout);
 				printf("Testing %s/%s ... ", psz_root, ptr->d_name);
-				if (check_file_time(&sb)< 0) {
-					printf(" ERROR, %ld, %ld, %ld\n", sb.st_ctime, sb.st_mtime, sb.st_atime);
-					// printf("\n[ERROR]: %s/%s got abnormal file time !!\n", psz_root, ptr->d_name);
-					// printf("st_ctime=%ld, st_mtime=%ld, st_atime=%ld\n", sb.st_ctime, sb.st_mtime, sb.st_atime);
-					//!!?? printf("st_ctime=%s, st_mtime=%s, st_atime=%s\n", ctime(&(sb.st_ctime)), ctime(&(sb.st_mtime)), ctime(&(sb.st_atime)));
+				if (check_file_time(&sb, &min_tm)< 0) {
+					if (_show_time) {
+						printf(" ERROR.\n\t>>> ctime=%lld, mtime=%lld, atime=%lld\n", (sb.st_ctime-min_tm), (sb.st_mtime-min_tm), (sb.st_atime-min_tm) );
+					}
+					else {
+						printf(" ERROR.\n\t>>> mtime=%lld, atime=%lld\n", (sb.st_mtime-min_tm), (sb.st_atime-min_tm) );
+					}
 				}
 				else {
-					printf(" PASS.\n");
+					if (_show_time) {
+						printf(" PASS.\n\t>>> ctime=%lld, mtime=%lld, atime=%lld\n", (sb.st_ctime-min_tm), (sb.st_mtime-min_tm), (sb.st_atime-min_tm));
+					}
+					else {
+						printf(" PASS.\n");
+					}
 				}
 				break;
 			default:
@@ -161,7 +196,7 @@ int process_dir(char *psz_root)
 ///!------------------------------------------------------
 int main(int argc, char *argv[])
 {
-	char	*psz_prog, *psz_root_dir;
+	char	*psz_prog;
 	int		errCode;
 
 	psz_prog = basename(argv[0]);	///! need to include libgen.h
@@ -170,10 +205,18 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-	psz_root_dir = argv[1];
-	printf("Root dir %s, size= %d\n", psz_root_dir, strlen(psz_root_dir)+1);
+	_dbg = 0;
+	_show_time = 0;
+	if (argc == 3 && !strcmp("-d", argv[2])) {
+		_dbg = 1;
+		fprintf(stdout, "Debug mode enabled!!\n"); fflush(stdout);
+	}
+	else if (argc == 3 && !strcmp("-t", argv[2])) {
+		_show_time = 1;
+		fprintf(stdout, "Show-time enabled!!\n"); fflush(stdout);
+	}
 
-	process_dir(psz_root_dir);
+	process_dir(argv[1]);
 
 	return 0;
 }
