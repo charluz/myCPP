@@ -85,8 +85,11 @@ int check_file_time(struct stat *p_sb, time_t *p_min_tm)
 	*p_min_tm = min;
 
 	//if ((mtime < ctime) || (atime < mtime))
-	if (atime < mtime) {
-		// @Windows10, mtime=日期，atime=修改日期，ctime=建立日期(copy 會改改變這一個時間) ??
+	if (mtime < ctime) {
+		// @Windows10: mtime=修改日期，atime=存取日期，ctime=建立日期
+		// 實測發現:
+		// 1. 檔案總管尚未點進去目錄前， ctime 會是相當於建立時間，mtime 會是修改時間
+		// 2. 檔案總管只要點進去目錄， mtime 就會被更新成跟 ctime 一樣
 		return -1;
 	}
 	else
@@ -164,7 +167,7 @@ int process_dir(char *psz_root)
 						printf(" ERROR.\n\t>>> ctime=%lld, mtime=%lld, atime=%lld\n", (sb.st_ctime-min_tm), (sb.st_mtime-min_tm), (sb.st_atime-min_tm) );
 					}
 					else {
-						printf(" ERROR.\n\t>>> mtime=%lld, atime=%lld\n", (sb.st_mtime-min_tm), (sb.st_atime-min_tm) );
+						printf(" ERROR.\n\t>>> mtime=%lld, ctime=%lld\n", (sb.st_mtime), (sb.st_ctime) );
 					}
 				}
 				else {
